@@ -71,6 +71,15 @@ body {
 
 .hidden { display: none !important; }
 
+.ext-link {
+  display: inline-block;
+  margin: -6px 0 14px;
+  font-size: 13px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.ext-link:hover { text-decoration: underline; }
+
 #refresh {
   font: inherit;
   background: white;

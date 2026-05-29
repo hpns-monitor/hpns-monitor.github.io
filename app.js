@@ -430,6 +430,16 @@ function refreshMapMarkers() {
   if (src) src.setData(counterFeatures());
 }
 
+function gmcmapUrl(paramId) {
+  return `https://gmcmap.com/historyData.asp?Param_ID=${paramId}`;
+}
+
+function updateDetectorLink() {
+  const a = document.getElementById("detector-link");
+  if (!a) return;
+  if (STATE.active) a.href = gmcmapUrl(STATE.active);
+}
+
 function renderMapSection() {
   const d = activeData();
   document.getElementById("map-caption").innerHTML =
@@ -448,7 +458,7 @@ function renderMapSection() {
   const pci  = last[pciI];
   const tr = document.createElement("tr");
   tr.innerHTML =
-    `<td>${d.name}</td>` +
+    `<td><a href="${gmcmapUrl(d.param_id)}" target="_blank" rel="noopener">${d.name} ↗</a></td>` +
     `<td>${d.lat?.toFixed(6) ?? "—"}</td>` +
     `<td>${d.lon?.toFixed(6) ?? "—"}</td>` +
     `<td>${cpm != null ? Math.round(cpm) : "—"}</td>` +
@@ -469,6 +479,7 @@ function setActive(paramId) {
 }
 
 function renderEverything() {
+  updateDetectorLink();
   renderCharts();
   renderMapSection();
 }
