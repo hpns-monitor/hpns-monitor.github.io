@@ -253,21 +253,29 @@ function renderCharts() {
     // Note: t is realigned to bucket centers; uSv & rolling use the same buckets.
   }
 
-  plotChart("chart-cpm",         plot.t, plot.cpm,     "CPM (counts per minute)",                "CPM",        "#1f77b4");
-  plotChart("chart-cpm-rolling", plot.t, plot.cpmRoll, `CPM rolling mean — local (${STATE.windowH}h window)`, "CPM (rolling)", "#9467bd");
-  plotChart("chart-usv",         plot.t, plot.usv,     "Dose rate (uSv/h)",                       "uSv/h",      "#2ca02c");
-
+  // On a Radon detector the CPM trace is just background noise of the Geiger-
+  // Müller tube; pCi is the headline. Hide both CPM charts to keep the radon
+  // view focused. uSv/h stays in both views.
   if (d.has_pci) {
     document.getElementById("chart-pci").style.display = "";
     document.getElementById("chart-pci-rolling").style.display = "";
-    plotChart("chart-pci",         plot.t, plot.pci,     "Radon activity (pCi/L)",                   "pCi/L",         "#ff7f0e");
+    plotChart("chart-pci",         plot.t, plot.pci,     "Radon activity (pCi/L)",                                "pCi/L",           "#ff7f0e");
     plotChart("chart-pci-rolling", plot.t, plot.pciRoll, `Radon rolling mean — local (${STATE.windowH}h window)`, "pCi/L (rolling)", "#d62728");
+    clearChart("chart-cpm");
+    clearChart("chart-cpm-rolling");
+    document.getElementById("chart-cpm").style.display = "none";
+    document.getElementById("chart-cpm-rolling").style.display = "none";
   } else {
     clearChart("chart-pci");
     clearChart("chart-pci-rolling");
     document.getElementById("chart-pci").style.display = "none";
     document.getElementById("chart-pci-rolling").style.display = "none";
+    document.getElementById("chart-cpm").style.display = "";
+    document.getElementById("chart-cpm-rolling").style.display = "";
+    plotChart("chart-cpm",         plot.t, plot.cpm,     "CPM (counts per minute)",                              "CPM",             "#1f77b4");
+    plotChart("chart-cpm-rolling", plot.t, plot.cpmRoll, `CPM rolling mean — local (${STATE.windowH}h window)`,  "CPM (rolling)",   "#9467bd");
   }
+  plotChart("chart-usv", plot.t, plot.usv, "Dose rate (uSv/h)", "uSv/h", "#2ca02c");
 
   // Status caption
   const bucketMsg = bucketSec ? ` · binned to ${fmtBucket(bucketSec)} mean` : "";
