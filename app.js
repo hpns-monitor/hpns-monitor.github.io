@@ -184,6 +184,9 @@ function plotChart(divId, times, values, title, yLabel, color) {
   if (!el) return;
   const hasData = values.some(v => v != null);
   if (!hasData) {
+    // Purge Plotly's state before swapping innerHTML, otherwise the next call
+    // sees stale _fullData and refuses to re-initialize (blank chart).
+    if (window.Plotly) Plotly.purge(el);
     el.innerHTML = `<div style="padding:14px;color:#888;font-size:13px;">No data for ${title} in the selected range.</div>`;
     return;
   }
@@ -209,10 +212,13 @@ function plotChart(divId, times, values, title, yLabel, color) {
 // Properly release Plotly's state from a chart div. Setting innerHTML = ""
 // alone leaves _fullData/_fullLayout attached to the node; the next
 // Plotly.react() then sees stale state and silently no-ops, producing a
-// blank chart after the second switch. Plotly.purge tears state down cleanly.
+// blank chart after the second switch. Plotly.purge tears state down,
+// then we wipe the DOM so any stale "No data for X" placeholder is gone.
 function purgeChart(divId) {
   const el = document.getElementById(divId);
-  if (el && window.Plotly) Plotly.purge(el);
+  if (!el) return;
+  if (window.Plotly) Plotly.purge(el);
+  el.innerHTML = "";
 }
 
 function renderCharts() {
