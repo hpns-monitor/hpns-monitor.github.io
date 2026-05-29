@@ -8,7 +8,7 @@ const COUNTERS = [
 ];
 const TIME_ZONE = "America/Los_Angeles";
 const REFRESH_MS = 5 * 60 * 1000;          // re-fetch JSON every 5 minutes
-const ROLLING_HOURS = [1, 3, 6, 12, 24];   // slider snap values
+const ROLLING_WINDOW_MS = 3600e3;          // 1h rolling-mean window (fixed)
 
 // CPM color bands — matches the legend the user provided.
 const CPM_BANDS = [
@@ -36,8 +36,6 @@ const TARGET_POINTS_PER_COUNTER = 400;
 const STATE = {
   active:       localStorage.getItem("active")       || COUNTERS[0].param_id,
   range:        localStorage.getItem("range")        || "week",
-  windowH:      parseInt(localStorage.getItem("windowH") || "1", 10),
-  smooth:       localStorage.getItem("smooth") !== "false",
   customStart:  localStorage.getItem("customStart")  || "",
   customEnd:    localStorage.getItem("customEnd")    || "",
 };
@@ -209,29 +207,55 @@ const THRESHOLDS = {
 
 function thresholdLayout(divId, values) {
   const defs = THRESHOLDS[divId] || [];
-  if (defs.length === 0) return { shapes: [], annotations: [], include: [] };
-  // Only include thresholds within ~3× of data max so the chart doesn't
-  // get squished by a "critical" threshold orders of magnitude above
-  // normal readings.
+  if (defs.length === 0) return { shapes: [], annotations: [] };
   const data = values.filter(v => v != null);
-  const dmax = data.length ? Math.max(...data) : 0;
-  const dmin = data.length ? Math.min(...data) : 0;
-  const ceiling = Math.max(dmax * 3, dmin + (dmax - dmin) * 3 + Math.abs(dmax) * 0.5);
-  const visible = defs.filter(t => t.y <= ceiling);
-  const lowestVisible = visible.length ? Math.min(...visible.map(t => t.y)) : null;
-  const shapes = visible.map(t => ({
-    type: "line", xref: "paper", x0: 0, x1: 1, yref: "y", y0: t.y, y1: t.y,
-    line: { color: t.color, width: 1, dash: "dash" },
-    layer: "below",
-  }));
-  const annotations = visible.map(t => ({
-    xref: "paper", x: 0.99, yref: "y", y: t.y,
-    text: t.label, showarrow: false,
-    xanchor: "right", yanchor: "bottom",
-    font: { size: 10, color: "#555" },
-    bgcolor: "rgba(255,255,255,0.78)",
-  }));
-  return { shapes, annotations, include: lowestVisible != null ? [lowestVisible] : [] };
+  if (data.length === 0) return { shapes: [], annotations: [] };
+  const dmax = Math.max(...data);
+  const dmin = Math.min(...data);
+  const span = Math.max(dmax - dmin, Math.abs(dmax) * 0.05 || 1);
+  // Approximate Plotly's autorange padding (~6% each side) so we know which
+  // thresholds will fall inside the visible y-axis and which are off-range.
+  const yvisMin = dmin - span * 0.06;
+  const yvisMax = dmax + span * 0.06;
+
+  const shapes = [];
+  const annotations = [];
+  let stackedAbove = 0;
+  for (const t of defs) {
+    if (t.y >= yvisMin && t.y <= yvisMax) {
+      // Threshold within visible range: prominent dashed line + boxed label.
+      shapes.push({
+        type: "line", xref: "paper", x0: 0, x1: 1, yref: "y", y0: t.y, y1: t.y,
+        line: { color: t.color, width: 2.2, dash: "dash" },
+        layer: "above",
+      });
+      annotations.push({
+        xref: "paper", x: 0.995, yref: "y", y: t.y,
+        text: `<b>${t.label}</b>`, showarrow: false,
+        xanchor: "right", yanchor: "bottom",
+        font: { size: 11, color: "#1f2328" },
+        bgcolor: "rgba(255,255,255,0.92)",
+        bordercolor: t.color,
+        borderwidth: 1.2,
+        borderpad: 3,
+      });
+    } else if (t.y > yvisMax) {
+      // Above visible range: pin a small "↑ label" chip at the top.
+      annotations.push({
+        xref: "paper", x: 0.995, yref: "paper", y: 0.98 - stackedAbove * 0.13,
+        text: `↑ <b>${t.label}</b>`, showarrow: false,
+        xanchor: "right", yanchor: "top",
+        font: { size: 11, color: t.color },
+        bgcolor: "rgba(255,255,255,0.92)",
+        bordercolor: t.color,
+        borderwidth: 1.2,
+        borderpad: 3,
+      });
+      stackedAbove++;
+    }
+    // Below visible range: skip — extremely unlikely with our threshold sets.
+  }
+  return { shapes, annotations };
 }
 
 function plotChart(divId, times, values, title, yLabel, color) {
@@ -255,16 +279,12 @@ function plotChart(divId, times, values, title, yLabel, color) {
     name: title,
     connectgaps: false,
   };
-  const { shapes, annotations, include } = thresholdLayout(divId, values);
+  const { shapes, annotations } = thresholdLayout(divId, values);
   const layout = {
     ...PLOTLY_LAYOUT_BASE,
     title: { text: title, font: { size: 14 }, x: 0.01 },
     xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: `Time (${tzAbbrev()})` },
-    yaxis: {
-      ...PLOTLY_LAYOUT_BASE.yaxis,
-      title: yLabel,
-      autorangeoptions: include.length ? { include } : {},
-    },
+    yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: yLabel },
     shapes,
     annotations,
   };
@@ -299,14 +319,13 @@ function renderCharts() {
   const pci  = rows.map(r => r[pciI]);
 
   // Rolling mean uses real (UTC) timestamps so windowing is correct regardless of display.
-  const windowMs = STATE.windowH * 3600e3;
-  const cpmRoll = rollingMean(tUtc, cpm, windowMs);
-  const pciRoll = d.has_pci ? rollingMean(tUtc, pci, windowMs) : null;
+  const cpmRoll = rollingMean(tUtc, cpm, ROLLING_WINDOW_MS);
+  const pciRoll = d.has_pci ? rollingMean(tUtc, pci, ROLLING_WINDOW_MS) : null;
 
   // Downsample if the user has it enabled AND we have too many points.
   let bucketSec = null;
   let plot = { t, cpm, usv, pci, cpmRoll, pciRoll };
-  if (STATE.smooth && rows.length > TARGET_POINTS_PER_COUNTER && rows.length >= 2) {
+  if (rows.length > TARGET_POINTS_PER_COUNTER && rows.length >= 2) {
     const spanSec = (tUtc[tUtc.length - 1] - tUtc[0]) / 1000;
     bucketSec = pickBucketSeconds(spanSec);
     const bucketMs = bucketSec * 1000;
@@ -332,7 +351,7 @@ function renderCharts() {
     document.getElementById("chart-pci").style.display = "";
     document.getElementById("chart-pci-rolling").style.display = "";
     plotChart("chart-pci",         plot.t, plot.pci,     "Radon activity (pCi/L)",                                "pCi/L",           "#ff7f0e");
-    plotChart("chart-pci-rolling", plot.t, plot.pciRoll, `Radon rolling mean — local (${STATE.windowH}h window)`, "pCi/L (rolling)", "#d62728");
+    plotChart("chart-pci-rolling", plot.t, plot.pciRoll, "Radon rolling mean (1h)", "pCi/L (rolling)", "#d62728");
     purgeChart("chart-cpm");
     purgeChart("chart-cpm-rolling");
     document.getElementById("chart-cpm").style.display = "none";
@@ -345,7 +364,7 @@ function renderCharts() {
     document.getElementById("chart-cpm").style.display = "";
     document.getElementById("chart-cpm-rolling").style.display = "";
     plotChart("chart-cpm",         plot.t, plot.cpm,     "CPM (counts per minute)",                              "CPM",             "#1f77b4");
-    plotChart("chart-cpm-rolling", plot.t, plot.cpmRoll, `CPM rolling mean — local (${STATE.windowH}h window)`,  "CPM (rolling)",   "#9467bd");
+    plotChart("chart-cpm-rolling", plot.t, plot.cpmRoll, "CPM rolling mean (1h)",  "CPM (rolling)",   "#9467bd");
   }
   plotChart("chart-usv", plot.t, plot.usv, "Dose rate (uSv/h)", "uSv/h", "#2ca02c");
 
@@ -410,6 +429,7 @@ function counterFeatures() {
           pci: d.has_pci ? pci : null,
           last_seen: last ? last[0] : null,
           color: cpmColor(cpm),
+          selected: d.param_id === STATE.active,
         },
       };
     }),
@@ -462,10 +482,10 @@ function initMap() {
       type: "circle",
       source: MAP_SOURCE_ID,
       paint: {
-        "circle-radius": 6,
+        "circle-radius": ["case", ["get", "selected"], 9, 6],
         "circle-color": ["get", "color"],
-        "circle-stroke-color": "#333",
-        "circle-stroke-width": 1,
+        "circle-stroke-color": ["case", ["get", "selected"], "#000", "#333"],
+        "circle-stroke-width": ["case", ["get", "selected"], 3, 1],
         "circle-opacity": 0.95,
       },
     });
@@ -544,6 +564,7 @@ function renderEverything() {
   updateDetectorLink();
   renderCharts();
   renderMapSection();
+  refreshMapMarkers();
 }
 
 function populateDetectorSelect() {
@@ -590,29 +611,6 @@ function wireSidebar() {
     if (STATE.range === "custom") renderCharts();
   });
 
-  const slider = document.getElementById("window-hours");
-  const initialIdx = Math.max(0, ROLLING_HOURS.indexOf(STATE.windowH));
-  slider.value = initialIdx;
-  document.getElementById("window-hours-label").textContent = ROLLING_HOURS[initialIdx];
-  slider.addEventListener("input", e => {
-    const idx = parseInt(e.target.value, 10);
-    STATE.windowH = ROLLING_HOURS[idx];
-    localStorage.setItem("windowH", String(STATE.windowH));
-    document.getElementById("window-hours-label").textContent = STATE.windowH;
-    renderCharts();
-  });
-
-  const smooth = document.getElementById("smooth");
-  smooth.checked = STATE.smooth;
-  smooth.addEventListener("change", e => {
-    STATE.smooth = e.target.checked;
-    localStorage.setItem("smooth", String(STATE.smooth));
-    renderCharts();
-  });
-
-  document.getElementById("refresh").addEventListener("click", async () => {
-    await refresh();
-  });
 }
 
 async function refresh() {
