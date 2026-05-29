@@ -18,6 +18,7 @@ html, body {
   font-size: 15px;
   line-height: 1.45;
   -webkit-text-size-adjust: 100%;
+  overscroll-behavior: contain;
 }
 
 html { scroll-behavior: smooth; }
@@ -45,6 +46,7 @@ body {
   align-self: start;
   max-height: 100vh;
   overflow-y: auto;
+  contain: layout;
 }
 
 #sidebar h1 { font-size: 20px; margin: 0 0 4px; }
@@ -143,6 +145,7 @@ details.info dd {
 main {
   padding: 18px 22px 40px;
   max-width: 100%;
+  contain: layout;
 }
 main h2 { margin: 0 0 4px; font-size: 24px; }
 main h3 { margin: 28px 0 8px; font-size: 18px; }
@@ -179,6 +182,11 @@ main .caption { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
   /* Let vertical finger drags scroll the page instead of being consumed by
      Plotly's drag layer. dragmode:false in the chart layout also helps. */
   touch-action: pan-y;
+  /* Hard-isolate each chart so neighbouring chart/glossary content can't
+     bleed in during Chrome-on-Android scroll repaints. */
+  position: relative;
+  overflow: hidden;
+  contain: layout style paint;
 }
 .chart svg,
 .chart .nsewdrag,
