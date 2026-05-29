@@ -179,6 +179,61 @@ const PLOTLY_LAYOUT_BASE = {
 };
 const PLOTLY_CONFIG = { displaylogo: false, responsive: true };
 
+// Reference thresholds rendered as dashed horizontal lines on each chart.
+// CPM bands match the on-map color legend. uSv/h ladder is the conventional
+// safety escalation. pCi/L thresholds are EPA / WHO action levels.
+const THRESHOLDS = {
+  "chart-cpm": [
+    { y: 50,  color: "#c5e673", label: "50 CPM" },
+    { y: 100, color: "#f4c36c", label: "100 CPM" },
+    { y: 200, color: "#ff6347", label: "200 CPM (critical)" },
+  ],
+  "chart-cpm-rolling": [
+    { y: 50,  color: "#c5e673", label: "50" },
+    { y: 100, color: "#f4c36c", label: "100" },
+    { y: 200, color: "#ff6347", label: "200 (critical)" },
+  ],
+  "chart-usv": [
+    { y: 0.30, color: "#f4c36c", label: "0.3 µSv/h (elevated)" },
+    { y: 1.0,  color: "#ff6347", label: "1.0 µSv/h (high)" },
+  ],
+  "chart-pci": [
+    { y: 2.7, color: "#c5e673", label: "2.7 pCi/L (WHO reference)" },
+    { y: 4.0, color: "#ff6347", label: "4.0 pCi/L (EPA action)" },
+  ],
+  "chart-pci-rolling": [
+    { y: 2.7, color: "#c5e673", label: "2.7 (WHO)" },
+    { y: 4.0, color: "#ff6347", label: "4.0 (EPA action)" },
+  ],
+};
+
+function thresholdLayout(divId, values) {
+  const defs = THRESHOLDS[divId] || [];
+  if (defs.length === 0) return { shapes: [], annotations: [], include: [] };
+  // Only include thresholds within ~3× of data max so the chart doesn't
+  // get squished by a "critical" threshold orders of magnitude above
+  // normal readings.
+  const data = values.filter(v => v != null);
+  const dmax = data.length ? Math.max(...data) : 0;
+  const dmin = data.length ? Math.min(...data) : 0;
+  const ceiling = Math.max(dmax * 3, dmin + (dmax - dmin) * 3 + Math.abs(dmax) * 0.5);
+  const visible = defs.filter(t => t.y <= ceiling);
+  const lowestVisible = visible.length ? Math.min(...visible.map(t => t.y)) : null;
+  const shapes = visible.map(t => ({
+    type: "line", xref: "paper", x0: 0, x1: 1, yref: "y", y0: t.y, y1: t.y,
+    line: { color: t.color, width: 1, dash: "dash" },
+    layer: "below",
+  }));
+  const annotations = visible.map(t => ({
+    xref: "paper", x: 0.99, yref: "y", y: t.y,
+    text: t.label, showarrow: false,
+    xanchor: "right", yanchor: "bottom",
+    font: { size: 10, color: "#555" },
+    bgcolor: "rgba(255,255,255,0.78)",
+  }));
+  return { shapes, annotations, include: lowestVisible != null ? [lowestVisible] : [] };
+}
+
 function plotChart(divId, times, values, title, yLabel, color) {
   const el = document.getElementById(divId);
   if (!el) return;
@@ -200,11 +255,18 @@ function plotChart(divId, times, values, title, yLabel, color) {
     name: title,
     connectgaps: false,
   };
+  const { shapes, annotations, include } = thresholdLayout(divId, values);
   const layout = {
     ...PLOTLY_LAYOUT_BASE,
     title: { text: title, font: { size: 14 }, x: 0.01 },
     xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: `Time (${tzAbbrev()})` },
-    yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: yLabel },
+    yaxis: {
+      ...PLOTLY_LAYOUT_BASE.yaxis,
+      title: yLabel,
+      autorangeoptions: include.length ? { include } : {},
+    },
+    shapes,
+    annotations,
   };
   Plotly.react(divId, [trace], layout, PLOTLY_CONFIG);
 }

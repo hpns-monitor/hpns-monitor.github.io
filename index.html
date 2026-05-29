@@ -18,6 +18,24 @@
       </label>
       <a id="detector-link" class="ext-link" target="_blank" rel="noopener">View on gmcmap.com ↗</a>
 
+      <details class="info">
+        <summary>About these charts</summary>
+        <dl>
+          <dt>CPM</dt>
+          <dd>Counts Per Minute from the Geiger–Müller tube. Each tick is one detected ionizing event. Typical natural background: 20–50 CPM.</dd>
+          <dt>CPM rolling mean</dt>
+          <dd>Time-windowed average of CPM over the window set by the slider below. Smooths Poisson noise to reveal trends — independent of gmcmap's server-side ACPM, which uses a window we can't see.</dd>
+          <dt>Dose rate (µSv/h)</dt>
+          <dd>Equivalent dose rate in microsieverts per hour. Typical natural background outdoors: 0.05–0.15 µSv/h. EPA annual public dose limit ≈ 0.11 µSv/h continuous.</dd>
+          <dt>Radon (pCi/L)</dt>
+          <dd>Radon activity concentration in picocuries per liter (Radon detector only). WHO reference: 2.7 pCi/L. EPA action level for mitigation: 4 pCi/L.</dd>
+          <dt>Radon rolling mean</dt>
+          <dd>Same rolling window applied to pCi/L.</dd>
+          <dt>Threshold lines</dt>
+          <dd>Dashed horizontal lines mark reference levels. Lines outside the chart's autoscaled range are hidden so the trace stays legible.</dd>
+        </dl>
+      </details>
+
       <label class="field">
         <span>Time range</span>
         <select id="range">

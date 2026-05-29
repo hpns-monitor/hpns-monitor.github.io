@@ -80,6 +80,50 @@ body {
 }
 .ext-link:hover { text-decoration: underline; }
 
+details.info {
+  margin: 0 0 14px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: white;
+}
+details.info > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+details.info > summary::-webkit-details-marker { display: none; }
+details.info > summary::before {
+  content: "▸";
+  color: var(--muted);
+  font-size: 11px;
+  transition: transform 0.15s ease;
+  display: inline-block;
+}
+details.info[open] > summary::before {
+  transform: rotate(90deg);
+}
+details.info dl {
+  margin: 0;
+  padding: 0 12px 10px;
+}
+details.info dt {
+  font-weight: 600;
+  margin-top: 8px;
+  color: var(--text);
+}
+details.info dd {
+  margin: 2px 0 0;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
 #refresh {
   font: inherit;
   background: white;
