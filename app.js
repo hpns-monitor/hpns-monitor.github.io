@@ -206,9 +206,13 @@ function plotChart(divId, times, values, title, yLabel, color) {
   Plotly.react(divId, [trace], layout, PLOTLY_CONFIG);
 }
 
-function clearChart(divId) {
+// Properly release Plotly's state from a chart div. Setting innerHTML = ""
+// alone leaves _fullData/_fullLayout attached to the node; the next
+// Plotly.react() then sees stale state and silently no-ops, producing a
+// blank chart after the second switch. Plotly.purge tears state down cleanly.
+function purgeChart(divId) {
   const el = document.getElementById(divId);
-  if (el) el.innerHTML = "";
+  if (el && window.Plotly) Plotly.purge(el);
 }
 
 function renderCharts() {
@@ -261,13 +265,13 @@ function renderCharts() {
     document.getElementById("chart-pci-rolling").style.display = "";
     plotChart("chart-pci",         plot.t, plot.pci,     "Radon activity (pCi/L)",                                "pCi/L",           "#ff7f0e");
     plotChart("chart-pci-rolling", plot.t, plot.pciRoll, `Radon rolling mean — local (${STATE.windowH}h window)`, "pCi/L (rolling)", "#d62728");
-    clearChart("chart-cpm");
-    clearChart("chart-cpm-rolling");
+    purgeChart("chart-cpm");
+    purgeChart("chart-cpm-rolling");
     document.getElementById("chart-cpm").style.display = "none";
     document.getElementById("chart-cpm-rolling").style.display = "none";
   } else {
-    clearChart("chart-pci");
-    clearChart("chart-pci-rolling");
+    purgeChart("chart-pci");
+    purgeChart("chart-pci-rolling");
     document.getElementById("chart-pci").style.display = "none";
     document.getElementById("chart-pci-rolling").style.display = "none";
     document.getElementById("chart-cpm").style.display = "";
