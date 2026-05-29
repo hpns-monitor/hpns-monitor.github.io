@@ -295,7 +295,10 @@ function renderKpis(d, rows, cpmI, usvI, pciI) {
 // ---------- MAP -----------------------------------------------------------
 
 let mapInstance = null;
-const markers = new Map();   // param_id → L.circleMarker
+let mapPopup = null;
+const MAP_LAYER_ID = "counter-circles";
+const MAP_SOURCE_ID = "counters";
+const MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
 
 function renderLegend() {
   const el = document.getElementById("legend");
@@ -304,61 +307,109 @@ function renderLegend() {
   ).join("");
 }
 
+function counterFeatures() {
+  const counters = Object.values(DATA).filter(d => d.lat != null && d.lon != null);
+  return {
+    type: "FeatureCollection",
+    features: counters.map(d => {
+      const cpmI = fieldIdx(d, "cpm");
+      const usvI = fieldIdx(d, "usv_h");
+      const pciI = fieldIdx(d, "pci");
+      const last = d.rows.length ? d.rows[d.rows.length - 1] : null;
+      const cpm  = last ? last[cpmI] : null;
+      const usv  = last ? last[usvI] : null;
+      const pci  = last ? last[pciI] : null;
+      return {
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [d.lon, d.lat] },
+        properties: {
+          param_id: d.param_id,
+          name: d.name,
+          cpm,
+          usv_h: usv,
+          pci: d.has_pci ? pci : null,
+          last_seen: last ? last[0] : null,
+          color: cpmColor(cpm),
+        },
+      };
+    }),
+  };
+}
+
+function popupHtml(props) {
+  const ts = props.last_seen
+    ? fmtDateTime(new Date(props.last_seen)) + " " + tzAbbrev()
+    : "—";
+  const cpm = props.cpm != null ? Math.round(props.cpm) : "—";
+  const usv = props.usv_h != null ? Number(props.usv_h).toFixed(3) : "—";
+  const pci = props.pci != null ? Number(props.pci).toFixed(2) : "—";
+  return `<b>${props.name}</b><br/>` +
+    `CPM: ${cpm}<br/>` +
+    `uSv/h: ${usv}<br/>` +
+    `pCi/L: ${pci}<br/>` +
+    `Last seen: ${ts}`;
+}
+
 function initMap() {
   if (mapInstance) return;
   const counters = Object.values(DATA).filter(d => d.lat != null && d.lon != null);
   if (counters.length === 0) return;
   const latMean = counters.reduce((s, d) => s + d.lat, 0) / counters.length;
   const lonMean = counters.reduce((s, d) => s + d.lon, 0) / counters.length;
-  mapInstance = L.map("map", { zoomControl: true }).setView([latMean, lonMean], 14);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap, &copy; CARTO',
-  }).addTo(mapInstance);
 
-  for (const d of counters) {
-    const cpmI = fieldIdx(d, "cpm");
-    const last = d.rows.length ? d.rows[d.rows.length - 1] : null;
-    const cpm  = last ? last[cpmI] : null;
-    const m = L.circleMarker([d.lat, d.lon], {
-      radius: 6,
-      weight: 1,
-      color: "#333",
-      fillColor: cpmColor(cpm),
-      fillOpacity: 0.95,
-    }).addTo(mapInstance);
-    m.bindTooltip(tooltipHtml(d), { sticky: true });
-    m.on("click", () => { setActive(d.param_id); });
-    markers.set(d.param_id, m);
-  }
-}
+  mapInstance = new maplibregl.Map({
+    container: "map",
+    style: MAP_STYLE,
+    center: [lonMean, latMean],
+    zoom: 14,
+    attributionControl: { compact: true },
+  });
+  mapInstance.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 
-function tooltipHtml(d) {
-  const cpmI = fieldIdx(d, "cpm");
-  const usvI = fieldIdx(d, "usv_h");
-  const pciI = fieldIdx(d, "pci");
-  const last = d.rows.length ? d.rows[d.rows.length - 1] : null;
-  const cpm  = last ? last[cpmI] : null;
-  const usv  = last ? last[usvI] : null;
-  const pci  = last ? last[pciI] : null;
-  const ts   = last ? fmtDateTime(new Date(last[0])) + " " + tzAbbrev() : "—";
-  return `<b>${d.name}</b><br/>` +
-    `CPM: ${cpm != null ? Math.round(cpm) : "—"}<br/>` +
-    `uSv/h: ${usv != null ? usv.toFixed(3) : "—"}<br/>` +
-    `pCi/L: ${pci != null ? pci.toFixed(2) : "—"}<br/>` +
-    `Last seen: ${ts}`;
+  mapPopup = new maplibregl.Popup({
+    closeButton: false,
+    closeOnClick: false,
+    offset: 10,
+  });
+
+  mapInstance.on("load", () => {
+    mapInstance.addSource(MAP_SOURCE_ID, {
+      type: "geojson",
+      data: counterFeatures(),
+    });
+    mapInstance.addLayer({
+      id: MAP_LAYER_ID,
+      type: "circle",
+      source: MAP_SOURCE_ID,
+      paint: {
+        "circle-radius": 6,
+        "circle-color": ["get", "color"],
+        "circle-stroke-color": "#333",
+        "circle-stroke-width": 1,
+        "circle-opacity": 0.95,
+      },
+    });
+
+    mapInstance.on("mouseenter", MAP_LAYER_ID, (e) => {
+      mapInstance.getCanvas().style.cursor = "pointer";
+      const f = e.features[0];
+      mapPopup.setLngLat(f.geometry.coordinates).setHTML(popupHtml(f.properties)).addTo(mapInstance);
+    });
+    mapInstance.on("mouseleave", MAP_LAYER_ID, () => {
+      mapInstance.getCanvas().style.cursor = "";
+      mapPopup.remove();
+    });
+    mapInstance.on("click", MAP_LAYER_ID, (e) => {
+      const f = e.features[0];
+      setActive(f.properties.param_id);
+    });
+  });
 }
 
 function refreshMapMarkers() {
-  for (const [paramId, m] of markers.entries()) {
-    const d = DATA[paramId];
-    if (!d) continue;
-    const cpmI = fieldIdx(d, "cpm");
-    const last = d.rows.length ? d.rows[d.rows.length - 1] : null;
-    const cpm  = last ? last[cpmI] : null;
-    m.setStyle({ fillColor: cpmColor(cpm) });
-    m.setTooltipContent(tooltipHtml(d));
-  }
+  if (!mapInstance) return;
+  const src = mapInstance.getSource(MAP_SOURCE_ID);
+  if (src) src.setData(counterFeatures());
 }
 
 function renderMapSection() {

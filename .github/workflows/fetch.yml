@@ -2,7 +2,7 @@ name: fetch
 
 on:
   schedule:
-    - cron: "5 * * * *"   # every hour at :05 UTC
+    - cron: "5 */12 * * *"   # twice a day at 00:05 and 12:05 UTC
   workflow_dispatch: {}
   push:
     paths:
