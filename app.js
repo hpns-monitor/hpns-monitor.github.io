@@ -66,19 +66,32 @@ function fmtDateTime(d) {
   }).format(d);
 }
 
-// Convert a UTC Date to a Date whose UTC components match Pacific time. Used as
-// Plotly x-axis values so axis labels show Pacific time without per-tick callbacks.
-function asPacificNaive(utcDate) {
+// How many minutes west of UTC the target timezone is at the given instant.
+// E.g. PDT (UTC-7) → +420, PST (UTC-8) → +480, UTC → 0.
+function targetTzOffsetMin(utcDate) {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: TIME_ZONE,
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
   }).formatToParts(utcDate);
-  const g = t => parts.find(p => p.type === t).value;
-  return new Date(Date.UTC(
-    +g("year"), +g("month") - 1, +g("day"),
-    +g("hour") % 24, +g("minute"), +g("second"),
-  ));
+  const g = t => +parts.find(p => p.type === t).value;
+  const targetWallAsUtc = Date.UTC(
+    g("year"), g("month") - 1, g("day"),
+    g("hour") % 24, g("minute"), g("second"),
+  );
+  return (utcDate.getTime() - targetWallAsUtc) / 60_000;
+}
+
+// Return a Date whose browser-local rendering matches the time in TIME_ZONE,
+// independent of where the viewer actually is. Plotly displays Date objects in
+// the browser's local zone — by shifting the value by (browser_offset −
+// target_offset) we make the browser's own subtraction land on the target.
+//
+// PDT viewer: shift = 0  → pass raw UTC, browser shows PDT.
+// UTC viewer: shift = −7h → date moves back 7h, browser (UTC) shows PDT.
+function toDisplayDate(utcDate) {
+  const shiftMin = utcDate.getTimezoneOffset() - targetTzOffsetMin(utcDate);
+  return new Date(utcDate.getTime() + shiftMin * 60_000);
 }
 
 function activeData() { return DATA[STATE.active]; }
@@ -324,7 +337,7 @@ function renderCharts() {
 
   // Series in raw form (Pacific-equivalent Dates for axis display).
   const tUtc = rows.map(r => new Date(r[0]));
-  const t    = tUtc.map(asPacificNaive);
+  const t    = tUtc.map(toDisplayDate);
   const cpm  = rows.map(r => r[cpmI]);
   const usv  = rows.map(r => r[usvI]);
   const pci  = rows.map(r => r[pciI]);
