@@ -1,0 +1,500 @@
+"use strict";
+
+// ---------- CONFIG --------------------------------------------------------
+
+const COUNTERS = [
+  { param_id: "48050335359" },  // geiger — default (first)
+  { param_id: "18659894937" },  // radon
+];
+const TIME_ZONE = "America/Los_Angeles";
+const REFRESH_MS = 5 * 60 * 1000;          // re-fetch JSON every 5 minutes
+const ROLLING_HOURS = [1, 3, 6, 12, 24];   // slider snap values
+
+// CPM color bands — matches the legend the user provided.
+const CPM_BANDS = [
+  { upper: 50,        label: "0–50 CPM",     css: "#4cd964" },
+  { upper: 100,       label: "50–100 CPM",   css: "#c5e673" },
+  { upper: 200,       label: "100–200 CPM",  css: "#f4c36c" },
+  { upper: Infinity,  label: "Over 200 CPM", css: "#ff6347" },
+];
+
+const RANGE_MS = {
+  hour:  3600e3,
+  day:   86400e3,
+  week:  7 * 86400e3,
+  month: 30 * 86400e3,
+  year:  365 * 86400e3,
+  all:   Infinity,
+};
+
+// Bucket candidates for downsampling, in seconds.
+const BUCKET_CANDIDATES_S = [60, 5*60, 15*60, 60*60, 6*60*60, 24*60*60, 7*24*60*60];
+const TARGET_POINTS_PER_COUNTER = 400;
+
+// ---------- STATE ---------------------------------------------------------
+
+const STATE = {
+  active:       localStorage.getItem("active")       || COUNTERS[0].param_id,
+  range:        localStorage.getItem("range")        || "week",
+  windowH:      parseInt(localStorage.getItem("windowH") || "1", 10),
+  smooth:       localStorage.getItem("smooth") !== "false",
+  customStart:  localStorage.getItem("customStart")  || "",
+  customEnd:    localStorage.getItem("customEnd")    || "",
+};
+
+const DATA = {};   // param_id → {param_id, name, lat, lon, has_pci, fields, rows}
+
+// ---------- HELPERS -------------------------------------------------------
+
+function fieldIdx(d, name) { return d.fields.indexOf(name); }
+
+function cpmColor(cpm) {
+  if (cpm == null) return "#888";
+  for (const b of CPM_BANDS) if (cpm < b.upper) return b.css;
+  return CPM_BANDS[CPM_BANDS.length - 1].css;
+}
+
+function tzAbbrev() {
+  const parts = new Intl.DateTimeFormat("en-US",
+    { timeZone: TIME_ZONE, timeZoneName: "short" }).formatToParts(new Date());
+  return (parts.find(p => p.type === "timeZoneName") || {}).value || "PT";
+}
+
+function fmtDateTime(d) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: TIME_ZONE,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+  }).format(d);
+}
+
+// Convert a UTC Date to a Date whose UTC components match Pacific time. Used as
+// Plotly x-axis values so axis labels show Pacific time without per-tick callbacks.
+function asPacificNaive(utcDate) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: TIME_ZONE,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+  }).formatToParts(utcDate);
+  const g = t => parts.find(p => p.type === t).value;
+  return new Date(Date.UTC(
+    +g("year"), +g("month") - 1, +g("day"),
+    +g("hour") % 24, +g("minute"), +g("second"),
+  ));
+}
+
+function activeData() { return DATA[STATE.active]; }
+
+function rangeBounds() {
+  const now = Date.now();
+  if (STATE.range === "custom") {
+    const start = STATE.customStart ? Date.parse(STATE.customStart + "T00:00:00") : 0;
+    const end   = STATE.customEnd   ? Date.parse(STATE.customEnd   + "T23:59:59") : now;
+    return { startMs: start, endMs: end };
+  }
+  const span = RANGE_MS[STATE.range];
+  if (span === Infinity) return { startMs: -Infinity, endMs: Infinity };
+  return { startMs: now - span, endMs: now };
+}
+
+function filterRows(rows) {
+  const { startMs, endMs } = rangeBounds();
+  if (startMs === -Infinity && endMs === Infinity) return rows;
+  return rows.filter(r => {
+    const t = Date.parse(r[0]);
+    return t >= startMs && t <= endMs;
+  });
+}
+
+// Time-based rolling mean over an array of {t, v}. Returns an array of means
+// (or null for windows with no data) at the same indices.
+function rollingMean(times, values, windowMs) {
+  const out = new Array(values.length);
+  let sum = 0, count = 0, left = 0;
+  for (let right = 0; right < values.length; right++) {
+    const v = values[right];
+    if (v != null) { sum += v; count++; }
+    while (left <= right && (times[right] - times[left]) > windowMs) {
+      const lv = values[left];
+      if (lv != null) { sum -= lv; count--; }
+      left++;
+    }
+    out[right] = count > 0 ? sum / count : null;
+  }
+  return out;
+}
+
+function pickBucketSeconds(spanSec) {
+  const target = Math.max(spanSec / TARGET_POINTS_PER_COUNTER, 60);
+  for (const c of BUCKET_CANDIDATES_S) if (c >= target) return c;
+  return BUCKET_CANDIDATES_S[BUCKET_CANDIDATES_S.length - 1];
+}
+
+function downsampleSeries(times, values, bucketMs) {
+  if (times.length === 0) return { times, values };
+  const buckets = new Map();
+  for (let i = 0; i < times.length; i++) {
+    if (values[i] == null) continue;
+    const key = Math.floor(times[i].getTime() / bucketMs);
+    if (!buckets.has(key)) buckets.set(key, { sum: 0, count: 0 });
+    const b = buckets.get(key);
+    b.sum += values[i]; b.count++;
+  }
+  const keys = [...buckets.keys()].sort((a, b) => a - b);
+  return {
+    times:  keys.map(k => new Date((k + 0.5) * bucketMs)),
+    values: keys.map(k => buckets.get(k).sum / buckets.get(k).count),
+  };
+}
+
+function fmtBucket(bucketSec) {
+  if (bucketSec >= 86400) return Math.round(bucketSec / 86400) + "d";
+  if (bucketSec >= 3600)  return Math.round(bucketSec / 3600)  + "h";
+  return Math.round(bucketSec / 60) + "m";
+}
+
+// ---------- DATA LOADING --------------------------------------------------
+
+async function loadAllData() {
+  const fetchOne = async (c) => {
+    const r = await fetch(`data/${c.param_id}.json?t=${Date.now()}`,
+      { cache: "no-cache" });
+    if (!r.ok) throw new Error(`fetch ${c.param_id} failed: HTTP ${r.status}`);
+    return r.json();
+  };
+  const results = await Promise.all(COUNTERS.map(fetchOne));
+  results.forEach(d => { DATA[d.param_id] = d; });
+}
+
+// ---------- RENDERING -----------------------------------------------------
+
+const PLOTLY_LAYOUT_BASE = {
+  height: 320,
+  margin: { l: 50, r: 14, t: 36, b: 36 },
+  hovermode: "x unified",
+  showlegend: false,
+  font: { size: 12 },
+  xaxis: { title: "", showgrid: true, gridcolor: "#eee" },
+  yaxis: { showgrid: true, gridcolor: "#eee" },
+};
+const PLOTLY_CONFIG = { displaylogo: false, responsive: true };
+
+function plotChart(divId, times, values, title, yLabel, color) {
+  const el = document.getElementById(divId);
+  if (!el) return;
+  const hasData = values.some(v => v != null);
+  if (!hasData) {
+    el.innerHTML = `<div style="padding:14px;color:#888;font-size:13px;">No data for ${title} in the selected range.</div>`;
+    return;
+  }
+  const trace = {
+    x: times,
+    y: values,
+    type: "scatter",
+    mode: "lines+markers",
+    line: { width: 2.5, color },
+    marker: { size: 4, color },
+    name: title,
+    connectgaps: false,
+  };
+  const layout = {
+    ...PLOTLY_LAYOUT_BASE,
+    title: { text: title, font: { size: 14 }, x: 0.01 },
+    xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: `Time (${tzAbbrev()})` },
+    yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: yLabel },
+  };
+  Plotly.react(divId, [trace], layout, PLOTLY_CONFIG);
+}
+
+function clearChart(divId) {
+  const el = document.getElementById(divId);
+  if (el) el.innerHTML = "";
+}
+
+function renderCharts() {
+  const d = activeData();
+  if (!d) return;
+  const rows = filterRows(d.rows);
+  const cpmI = fieldIdx(d, "cpm");
+  const usvI = fieldIdx(d, "usv_h");
+  const pciI = fieldIdx(d, "pci");
+
+  // Series in raw form (Pacific-equivalent Dates for axis display).
+  const tUtc = rows.map(r => new Date(r[0]));
+  const t    = tUtc.map(asPacificNaive);
+  const cpm  = rows.map(r => r[cpmI]);
+  const usv  = rows.map(r => r[usvI]);
+  const pci  = rows.map(r => r[pciI]);
+
+  // Rolling mean uses real (UTC) timestamps so windowing is correct regardless of display.
+  const windowMs = STATE.windowH * 3600e3;
+  const cpmRoll = rollingMean(tUtc, cpm, windowMs);
+  const pciRoll = d.has_pci ? rollingMean(tUtc, pci, windowMs) : null;
+
+  // Downsample if the user has it enabled AND we have too many points.
+  let bucketSec = null;
+  let plot = { t, cpm, usv, pci, cpmRoll, pciRoll };
+  if (STATE.smooth && rows.length > TARGET_POINTS_PER_COUNTER && rows.length >= 2) {
+    const spanSec = (tUtc[tUtc.length - 1] - tUtc[0]) / 1000;
+    bucketSec = pickBucketSeconds(spanSec);
+    const bucketMs = bucketSec * 1000;
+    const ds = (vals) => downsampleSeries(t, vals, bucketMs);
+    const c   = ds(cpm);
+    const u   = ds(usv);
+    const cr  = ds(cpmRoll);
+    plot = {
+      t:        c.times,
+      cpm:      c.values,
+      usv:      u.values,
+      cpmRoll:  cr.values,
+      pci:      d.has_pci ? ds(pci).values  : null,
+      pciRoll:  d.has_pci ? ds(pciRoll).values : null,
+    };
+    // Note: t is realigned to bucket centers; uSv & rolling use the same buckets.
+  }
+
+  plotChart("chart-cpm",         plot.t, plot.cpm,     "CPM (counts per minute)",                "CPM",        "#1f77b4");
+  plotChart("chart-cpm-rolling", plot.t, plot.cpmRoll, `CPM rolling mean — local (${STATE.windowH}h window)`, "CPM (rolling)", "#9467bd");
+  plotChart("chart-usv",         plot.t, plot.usv,     "Dose rate (uSv/h)",                       "uSv/h",      "#2ca02c");
+
+  if (d.has_pci) {
+    document.getElementById("chart-pci").style.display = "";
+    document.getElementById("chart-pci-rolling").style.display = "";
+    plotChart("chart-pci",         plot.t, plot.pci,     "Radon activity (pCi/L)",                   "pCi/L",         "#ff7f0e");
+    plotChart("chart-pci-rolling", plot.t, plot.pciRoll, `Radon rolling mean — local (${STATE.windowH}h window)`, "pCi/L (rolling)", "#d62728");
+  } else {
+    clearChart("chart-pci");
+    clearChart("chart-pci-rolling");
+    document.getElementById("chart-pci").style.display = "none";
+    document.getElementById("chart-pci-rolling").style.display = "none";
+  }
+
+  // Status caption
+  const bucketMsg = bucketSec ? ` · binned to ${fmtBucket(bucketSec)} mean` : "";
+  const last = fmtDateTime(new Date());
+  document.getElementById("status-caption").textContent =
+    `Detector: ${d.name} · last refresh: ${last} ${tzAbbrev()} · ${rows.length.toLocaleString()} raw rows in view${bucketMsg}`;
+
+  renderKpis(d, rows, cpmI, usvI, pciI);
+}
+
+function renderKpis(d, rows, cpmI, usvI, pciI) {
+  document.getElementById("kpi-rows").textContent = rows.length.toLocaleString();
+  const lastWith = (idx) => {
+    for (let i = rows.length - 1; i >= 0; i--) if (rows[i][idx] != null) return rows[i][idx];
+    return null;
+  };
+  const cpm = lastWith(cpmI);
+  const usv = lastWith(usvI);
+  const pci = lastWith(pciI);
+  document.getElementById("kpi-cpm").textContent = cpm != null ? String(Math.round(cpm)) : "—";
+  document.getElementById("kpi-usv").textContent = usv != null ? usv.toFixed(3)         : "—";
+  document.getElementById("kpi-pci").textContent = (d.has_pci && pci != null) ? pci.toFixed(2) : "—";
+}
+
+// ---------- MAP -----------------------------------------------------------
+
+let mapInstance = null;
+const markers = new Map();   // param_id → L.circleMarker
+
+function renderLegend() {
+  const el = document.getElementById("legend");
+  el.innerHTML = CPM_BANDS.map(b =>
+    `<span><span class="swatch" style="background:${b.css}"></span>${b.label}</span>`
+  ).join("");
+}
+
+function initMap() {
+  if (mapInstance) return;
+  const counters = Object.values(DATA).filter(d => d.lat != null && d.lon != null);
+  if (counters.length === 0) return;
+  const latMean = counters.reduce((s, d) => s + d.lat, 0) / counters.length;
+  const lonMean = counters.reduce((s, d) => s + d.lon, 0) / counters.length;
+  mapInstance = L.map("map", { zoomControl: true }).setView([latMean, lonMean], 14);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap, &copy; CARTO',
+  }).addTo(mapInstance);
+
+  for (const d of counters) {
+    const cpmI = fieldIdx(d, "cpm");
+    const last = d.rows.length ? d.rows[d.rows.length - 1] : null;
+    const cpm  = last ? last[cpmI] : null;
+    const m = L.circleMarker([d.lat, d.lon], {
+      radius: 6,
+      weight: 1,
+      color: "#333",
+      fillColor: cpmColor(cpm),
+      fillOpacity: 0.95,
+    }).addTo(mapInstance);
+    m.bindTooltip(tooltipHtml(d), { sticky: true });
+    m.on("click", () => { setActive(d.param_id); });
+    markers.set(d.param_id, m);
+  }
+}
+
+function tooltipHtml(d) {
+  const cpmI = fieldIdx(d, "cpm");
+  const usvI = fieldIdx(d, "usv_h");
+  const pciI = fieldIdx(d, "pci");
+  const last = d.rows.length ? d.rows[d.rows.length - 1] : null;
+  const cpm  = last ? last[cpmI] : null;
+  const usv  = last ? last[usvI] : null;
+  const pci  = last ? last[pciI] : null;
+  const ts   = last ? fmtDateTime(new Date(last[0])) + " " + tzAbbrev() : "—";
+  return `<b>${d.name}</b><br/>` +
+    `CPM: ${cpm != null ? Math.round(cpm) : "—"}<br/>` +
+    `uSv/h: ${usv != null ? usv.toFixed(3) : "—"}<br/>` +
+    `pCi/L: ${pci != null ? pci.toFixed(2) : "—"}<br/>` +
+    `Last seen: ${ts}`;
+}
+
+function refreshMapMarkers() {
+  for (const [paramId, m] of markers.entries()) {
+    const d = DATA[paramId];
+    if (!d) continue;
+    const cpmI = fieldIdx(d, "cpm");
+    const last = d.rows.length ? d.rows[d.rows.length - 1] : null;
+    const cpm  = last ? last[cpmI] : null;
+    m.setStyle({ fillColor: cpmColor(cpm) });
+    m.setTooltipContent(tooltipHtml(d));
+  }
+}
+
+function renderMapSection() {
+  const d = activeData();
+  document.getElementById("map-caption").innerHTML =
+    d ? `Active detector: <b>${d.name}</b> · tap a marker to switch.`
+      : "Tap a marker to make it the active detector.";
+  const tbody = document.querySelector("#loc-table tbody");
+  tbody.innerHTML = "";
+  if (!d) return;
+  const last = d.rows.length ? d.rows[d.rows.length - 1] : null;
+  if (!last) return;
+  const cpmI = fieldIdx(d, "cpm");
+  const usvI = fieldIdx(d, "usv_h");
+  const pciI = fieldIdx(d, "pci");
+  const cpm  = last[cpmI];
+  const usv  = last[usvI];
+  const pci  = last[pciI];
+  const tr = document.createElement("tr");
+  tr.innerHTML =
+    `<td>${d.name}</td>` +
+    `<td>${d.lat?.toFixed(6) ?? "—"}</td>` +
+    `<td>${d.lon?.toFixed(6) ?? "—"}</td>` +
+    `<td>${cpm != null ? Math.round(cpm) : "—"}</td>` +
+    `<td>${usv != null ? usv.toFixed(3) : "—"}</td>` +
+    `<td>${d.has_pci && pci != null ? pci.toFixed(2) : "—"}</td>` +
+    `<td>${fmtDateTime(new Date(last[0]))} ${tzAbbrev()}</td>`;
+  tbody.appendChild(tr);
+}
+
+// ---------- SIDEBAR / STATE WIRING ---------------------------------------
+
+function setActive(paramId) {
+  if (!DATA[paramId] || STATE.active === paramId) return;
+  STATE.active = paramId;
+  localStorage.setItem("active", paramId);
+  document.getElementById("detector").value = paramId;
+  renderEverything();
+}
+
+function renderEverything() {
+  renderCharts();
+  renderMapSection();
+}
+
+function populateDetectorSelect() {
+  const sel = document.getElementById("detector");
+  sel.innerHTML = "";
+  for (const c of COUNTERS) {
+    const d = DATA[c.param_id];
+    if (!d) continue;
+    const opt = document.createElement("option");
+    opt.value = d.param_id;
+    opt.textContent = d.name;
+    sel.appendChild(opt);
+  }
+  if (!DATA[STATE.active]) STATE.active = COUNTERS[0].param_id;
+  sel.value = STATE.active;
+}
+
+function wireSidebar() {
+  document.getElementById("detector").addEventListener("change", e => {
+    setActive(e.target.value);
+  });
+
+  document.getElementById("range").addEventListener("change", e => {
+    STATE.range = e.target.value;
+    localStorage.setItem("range", STATE.range);
+    document.getElementById("custom-range").classList.toggle("hidden", STATE.range !== "custom");
+    renderCharts();
+  });
+  document.getElementById("range").value = STATE.range;
+  document.getElementById("custom-range").classList.toggle("hidden", STATE.range !== "custom");
+
+  const customStart = document.getElementById("custom-start");
+  const customEnd   = document.getElementById("custom-end");
+  customStart.value = STATE.customStart;
+  customEnd.value   = STATE.customEnd;
+  customStart.addEventListener("change", e => {
+    STATE.customStart = e.target.value;
+    localStorage.setItem("customStart", STATE.customStart);
+    if (STATE.range === "custom") renderCharts();
+  });
+  customEnd.addEventListener("change", e => {
+    STATE.customEnd = e.target.value;
+    localStorage.setItem("customEnd", STATE.customEnd);
+    if (STATE.range === "custom") renderCharts();
+  });
+
+  const slider = document.getElementById("window-hours");
+  const initialIdx = Math.max(0, ROLLING_HOURS.indexOf(STATE.windowH));
+  slider.value = initialIdx;
+  document.getElementById("window-hours-label").textContent = ROLLING_HOURS[initialIdx];
+  slider.addEventListener("input", e => {
+    const idx = parseInt(e.target.value, 10);
+    STATE.windowH = ROLLING_HOURS[idx];
+    localStorage.setItem("windowH", String(STATE.windowH));
+    document.getElementById("window-hours-label").textContent = STATE.windowH;
+    renderCharts();
+  });
+
+  const smooth = document.getElementById("smooth");
+  smooth.checked = STATE.smooth;
+  smooth.addEventListener("change", e => {
+    STATE.smooth = e.target.checked;
+    localStorage.setItem("smooth", String(STATE.smooth));
+    renderCharts();
+  });
+
+  document.getElementById("refresh").addEventListener("click", async () => {
+    await refresh();
+  });
+}
+
+async function refresh() {
+  await loadAllData();
+  populateDetectorSelect();
+  refreshMapMarkers();
+  renderEverything();
+}
+
+// ---------- INIT ----------------------------------------------------------
+
+(async function init() {
+  renderLegend();
+  try {
+    await loadAllData();
+  } catch (e) {
+    document.getElementById("status-caption").textContent =
+      "Failed to load data: " + e.message;
+    console.error(e);
+    return;
+  }
+  populateDetectorSelect();
+  wireSidebar();
+  initMap();
+  renderEverything();
+  setInterval(refresh, REFRESH_MS);
+})();

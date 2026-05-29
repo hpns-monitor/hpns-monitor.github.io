@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>HPNS radiation monitor</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <aside id="sidebar">
+      <h1>hpns-monitor</h1>
+      <p class="caption">Hunters Point Naval Shipyard — radiation readings from <a href="https://gmcmap.com" target="_blank" rel="noopener">gmcmap.com</a></p>
+
+      <label class="field">
+        <span>Active detector</span>
+        <select id="detector"></select>
+      </label>
+
+      <label class="field">
+        <span>Time range</span>
+        <select id="range">
+          <option value="hour">Last hour</option>
+          <option value="day">Last day</option>
+          <option value="week" selected>Last week</option>
+          <option value="month">Last month</option>
+          <option value="year">Last year</option>
+          <option value="all">All time</option>
+          <option value="custom">Custom range</option>
+        </select>
+      </label>
+
+      <div id="custom-range" class="field hidden">
+        <label><span>Start</span><input type="date" id="custom-start" /></label>
+        <label><span>End</span><input type="date" id="custom-end" /></label>
+      </div>
+
+      <label class="field">
+        <span>Local rolling-mean window (hours)</span>
+        <input type="range" id="window-hours" min="0" max="4" step="1" value="0" />
+        <span class="hint"><span id="window-hours-label">1</span> h</span>
+      </label>
+
+      <label class="field check">
+        <input type="checkbox" id="smooth" checked />
+        <span>Smooth (bucket-mean) when dense</span>
+      </label>
+
+      <button id="refresh" type="button">Refresh now</button>
+
+      <p class="caption" id="last-refresh"></p>
+    </aside>
+
+    <main>
+      <h2 id="page-title">Geiger counter readings</h2>
+      <p id="status-caption" class="caption"></p>
+
+      <div id="kpis" class="kpi-row">
+        <div class="kpi"><span>Rows in view</span><strong id="kpi-rows">—</strong></div>
+        <div class="kpi"><span>Latest CPM</span><strong id="kpi-cpm">—</strong></div>
+        <div class="kpi"><span>Latest uSv/h</span><strong id="kpi-usv">—</strong></div>
+        <div class="kpi"><span>Latest pCi/L</span><strong id="kpi-pci">—</strong></div>
+      </div>
+
+      <div class="chart" id="chart-cpm"></div>
+      <div class="chart" id="chart-cpm-rolling"></div>
+      <div class="chart" id="chart-usv"></div>
+      <div class="chart" id="chart-pci"></div>
+      <div class="chart" id="chart-pci-rolling"></div>
+
+      <hr />
+
+      <h3>Counter locations (latest)</h3>
+      <div id="legend"></div>
+      <p id="map-caption" class="caption"></p>
+      <div id="map"></div>
+      <table id="loc-table">
+        <thead>
+          <tr><th>counter</th><th>lat</th><th>lon</th><th>cpm</th><th>uSv/h</th><th>pCi/L</th><th>last seen</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </main>
+
+    <script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js" charset="utf-8"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="app.js"></script>
+  </body>
+</html>
