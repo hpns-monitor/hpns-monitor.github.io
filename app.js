@@ -172,10 +172,21 @@ const PLOTLY_LAYOUT_BASE = {
   hovermode: "x unified",
   showlegend: false,
   font: { size: 12 },
-  xaxis: { title: "", showgrid: true, gridcolor: "#eee" },
-  yaxis: { showgrid: true, gridcolor: "#eee" },
+  xaxis: { title: "", showgrid: true, gridcolor: "#eee", fixedrange: true },
+  yaxis: { showgrid: true, gridcolor: "#eee", fixedrange: true },
+  // Disable click-and-drag chart panning so finger swipes on mobile pass
+  // through to the page scroller instead of being captured by Plotly.
+  dragmode: false,
 };
-const PLOTLY_CONFIG = { displaylogo: false, responsive: true };
+const PLOTLY_CONFIG = {
+  displaylogo: false,
+  responsive: true,
+  scrollZoom: false,
+  doubleClick: false,
+  showTips: false,
+  staticPlot: false,
+  displayModeBar: false,
+};
 
 // Reference thresholds rendered as dashed horizontal lines on each chart.
 // CPM bands match the on-map color legend. uSv/h ladder is the conventional
@@ -463,6 +474,10 @@ function initMap() {
     center: [lonMean, latMean],
     zoom: 14,
     attributionControl: { compact: true },
+    // Single-finger drag scrolls the page; two-finger drag pans the map.
+    // ⌘/Ctrl + scroll is required for wheel-zoom on desktop. Mobile users
+    // see a brief hint overlay when they try to one-finger drag.
+    cooperativeGestures: true,
   });
   mapInstance.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 

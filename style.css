@@ -17,7 +17,13 @@ html, body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   font-size: 15px;
   line-height: 1.45;
+  -webkit-text-size-adjust: 100%;
 }
+
+html { scroll-behavior: smooth; }
+
+/* Remove the 300ms tap delay on iOS for interactive controls. */
+button, select, input, a, summary { touch-action: manipulation; }
 
 body {
   display: grid;
@@ -170,6 +176,16 @@ main .caption { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
   padding: 6px;
   margin-bottom: 14px;
   min-height: 320px;
+  /* Let vertical finger drags scroll the page instead of being consumed by
+     Plotly's drag layer. dragmode:false in the chart layout also helps. */
+  touch-action: pan-y;
+}
+.chart svg,
+.chart .nsewdrag,
+.chart .draglayer,
+.chart .plot-container,
+.chart .main-svg {
+  touch-action: pan-y !important;
 }
 
 #legend {
