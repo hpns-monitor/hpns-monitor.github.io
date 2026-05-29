@@ -83,12 +83,12 @@ def _coerce_float(s: str) -> float | None:
 
 
 def _parse_tz_offset(header_text: str) -> timezone:
-    m = HEADER_TZ_RE.search(header_text)
-    if not m:
-        return timezone.utc
-    sign, hh, mm = m.group(1), int(m.group(2)), int(m.group(3) or 0)
-    delta = timedelta(hours=hh, minutes=mm)
-    return timezone(delta if sign == "+" else -delta)
+    # gmcmap.com lies in its column header: it labels the Date column "GMT-7:00"
+    # but actually serves timestamps already in UTC. Verified by comparing live
+    # gmcmap rows against GitHub Actions' real UTC clock. Trust the data, not
+    # the header. HEADER_TZ_RE stays above for the day gmcmap fixes this.
+    _ = header_text  # silence lint
+    return timezone.utc
 
 
 def fetch_page(session: requests.Session, param_id: str, curpage: int) -> str:

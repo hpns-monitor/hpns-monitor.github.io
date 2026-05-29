@@ -62,11 +62,13 @@
         <div class="kpi"><span>Latest pCi/L</span><strong id="kpi-pci">—</strong></div>
       </div>
 
+      <!-- Detector-specific charts first (display:none when the active detector
+           does not report pCi), so on radon they are visible above the fold. -->
+      <div class="chart" id="chart-pci"></div>
+      <div class="chart" id="chart-pci-rolling"></div>
       <div class="chart" id="chart-cpm"></div>
       <div class="chart" id="chart-cpm-rolling"></div>
       <div class="chart" id="chart-usv"></div>
-      <div class="chart" id="chart-pci"></div>
-      <div class="chart" id="chart-pci-rolling"></div>
 
       <hr />
 
