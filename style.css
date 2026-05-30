@@ -32,11 +32,6 @@ body {
   min-height: 100vh;
 }
 
-@media (max-width: 720px) {
-  body { grid-template-columns: 1fr; }
-  #sidebar { position: static; height: auto; max-height: none; border-right: none; border-bottom: 1px solid var(--border); }
-}
-
 #sidebar {
   background: var(--panel);
   border-right: 1px solid var(--border);
@@ -47,6 +42,23 @@ body {
   max-height: 100vh;
   overflow-y: auto;
   contain: layout;
+}
+
+/* On mobile the sidebar becomes a normal block at the top of the page that
+   scrolls with the rest of the content. The previous order had this @media
+   rule above the #sidebar block, so the later sticky rule overrode it and
+   the sidebar stayed pinned during scroll — main content visibly slid under
+   it. Keep this block AFTER #sidebar so the override wins. */
+@media (max-width: 720px) {
+  body { grid-template-columns: 1fr; }
+  #sidebar {
+    position: static;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
 }
 
 #sidebar h1 { font-size: 20px; margin: 0 0 4px; }

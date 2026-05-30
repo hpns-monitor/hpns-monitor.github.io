@@ -36,24 +36,6 @@
         <label><span>End</span><input type="date" id="custom-end" /></label>
       </div>
 
-      <details class="info" open>
-        <summary>About these charts</summary>
-        <dl>
-          <dt>CPM</dt>
-          <dd>Counts Per Minute from the Geiger–Müller tube. Each tick is one detected ionizing event. Typical natural background: 20–50 CPM.</dd>
-          <dt>CPM rolling mean</dt>
-          <dd>Time-windowed average of CPM (1-hour window). Smooths Poisson noise to reveal trends — independent of gmcmap's server-side ACPM, which uses a window we can't see.</dd>
-          <dt>Dose rate (µSv/h)</dt>
-          <dd>Equivalent dose rate in microsieverts per hour. Typical natural background outdoors: 0.05–0.15 µSv/h. EPA annual public dose limit ≈ 0.11 µSv/h continuous.</dd>
-          <dt>Radon (pCi/L)</dt>
-          <dd>Radon activity concentration in picocuries per liter (Radon detector only). WHO reference: 2.7 pCi/L. EPA action level for mitigation: 4 pCi/L.</dd>
-          <dt>Radon rolling mean</dt>
-          <dd>Same 1-hour rolling window applied to pCi/L.</dd>
-          <dt>Threshold lines</dt>
-          <dd>Dashed horizontal lines mark reference levels. Lines outside the chart's autoscaled range are pinned to the top of the chart so they stay visible.</dd>
-        </dl>
-      </details>
-
       <p class="caption" id="last-refresh"></p>
     </aside>
 
@@ -88,6 +70,24 @@
         </thead>
         <tbody></tbody>
       </table>
+
+      <details class="info" open>
+        <summary>About these charts</summary>
+        <dl>
+          <dt>CPM</dt>
+          <dd>Counts Per Minute from the Geiger–Müller tube. Each tick is one detected ionizing event. Typical natural background: 20–50 CPM.</dd>
+          <dt>CPM rolling mean</dt>
+          <dd>Time-windowed average of CPM (1-hour window). Smooths Poisson noise to reveal trends — independent of gmcmap's server-side ACPM, which uses a window we can't see.</dd>
+          <dt>Dose rate (µSv/h)</dt>
+          <dd>Equivalent dose rate in microsieverts per hour. Typical natural background outdoors: 0.05–0.15 µSv/h. EPA annual public dose limit ≈ 0.11 µSv/h continuous.</dd>
+          <dt>Radon (pCi/L)</dt>
+          <dd>Radon activity concentration in picocuries per liter (Radon detector only). WHO reference: 2.7 pCi/L. EPA action level for mitigation: 4 pCi/L.</dd>
+          <dt>Radon rolling mean</dt>
+          <dd>Same 1-hour rolling window applied to pCi/L.</dd>
+          <dt>Threshold lines</dt>
+          <dd>Dashed horizontal lines mark reference levels. Lines outside the chart's autoscaled range are pinned to the top of the chart so they stay visible.</dd>
+        </dl>
+      </details>
     </main>
 
     <script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js" charset="utf-8"></script>
