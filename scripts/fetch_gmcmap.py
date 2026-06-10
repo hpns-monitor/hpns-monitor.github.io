@@ -20,7 +20,7 @@ import requests
 from bs4 import BeautifulSoup
 
 COUNTERS = [
-    {"param_id": "48050335359", "name": "hunters-point-naval-shipyard-geiger"},
+    {"param_id": "48050335359", "name": "geiger-counter-48050335359"},
 ]
 
 BASE_URL = "https://gmcmap.com/historyData.asp"
