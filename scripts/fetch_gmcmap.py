@@ -1,8 +1,7 @@
 """Hourly fetcher for the public hpns-monitor.github.io dashboard.
 
 Walks gmcmap.com history pages for each configured counter, parses the HTML
-table column-by-header (so detectors with different schemas — Geiger vs. Radon
-— share one parser), de-duplicates against the existing JSON file, and writes
+table column-by-header, de-duplicates against the existing JSON file, and writes
 a compact array-of-arrays JSON to ``data/<param_id>.json``.
 
 Designed to run from .github/workflows/fetch.yml with no extra services.
@@ -22,7 +21,6 @@ from bs4 import BeautifulSoup
 
 COUNTERS = [
     {"param_id": "48050335359", "name": "hunters-point-naval-shipyard-geiger"},
-    {"param_id": "18659894937", "name": "hunters-point-naval-shipyard-radon"},
 ]
 
 BASE_URL = "https://gmcmap.com/historyData.asp"

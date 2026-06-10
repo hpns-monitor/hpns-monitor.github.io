@@ -3,8 +3,7 @@
 // ---------- CONFIG --------------------------------------------------------
 
 const COUNTERS = [
-  { param_id: "48050335359" },  // geiger — default (first)
-  { param_id: "18659894937" },  // radon
+  { param_id: "48050335359" },  // geiger
 ];
 const TIME_ZONE = "America/Los_Angeles";
 const REFRESH_MS = 5 * 60 * 1000;          // re-fetch JSON every 5 minutes
@@ -203,7 +202,7 @@ const PLOTLY_CONFIG = {
 
 // Reference thresholds rendered as dashed horizontal lines on each chart.
 // CPM bands match the on-map color legend. uSv/h ladder is the conventional
-// safety escalation. pCi/L thresholds are EPA / WHO action levels.
+// safety escalation.
 const THRESHOLDS = {
   "chart-cpm": [
     { y: 50,  color: "#c5e673", label: "50 CPM" },
@@ -218,14 +217,6 @@ const THRESHOLDS = {
   "chart-usv": [
     { y: 0.30, color: "#f4c36c", label: "0.3 µSv/h (elevated)" },
     { y: 1.0,  color: "#ff6347", label: "1.0 µSv/h (high)" },
-  ],
-  "chart-pci": [
-    { y: 2.7, color: "#c5e673", label: "2.7 pCi/L (WHO reference)" },
-    { y: 4.0, color: "#ff6347", label: "4.0 pCi/L (EPA action)" },
-  ],
-  "chart-pci-rolling": [
-    { y: 2.7, color: "#c5e673", label: "2.7 (WHO)" },
-    { y: 4.0, color: "#ff6347", label: "4.0 (EPA action)" },
   ],
 };
 
@@ -315,40 +306,25 @@ function plotChart(divId, times, values, title, yLabel, color) {
   Plotly.react(divId, [trace], layout, PLOTLY_CONFIG);
 }
 
-// Properly release Plotly's state from a chart div. Setting innerHTML = ""
-// alone leaves _fullData/_fullLayout attached to the node; the next
-// Plotly.react() then sees stale state and silently no-ops, producing a
-// blank chart after the second switch. Plotly.purge tears state down,
-// then we wipe the DOM so any stale "No data for X" placeholder is gone.
-function purgeChart(divId) {
-  const el = document.getElementById(divId);
-  if (!el) return;
-  if (window.Plotly) Plotly.purge(el);
-  el.innerHTML = "";
-}
-
 function renderCharts() {
   const d = activeData();
   if (!d) return;
   const rows = filterRows(d.rows);
   const cpmI = fieldIdx(d, "cpm");
   const usvI = fieldIdx(d, "usv_h");
-  const pciI = fieldIdx(d, "pci");
 
   // Series in raw form (Pacific-equivalent Dates for axis display).
   const tUtc = rows.map(r => new Date(r[0]));
   const t    = tUtc.map(toDisplayDate);
   const cpm  = rows.map(r => r[cpmI]);
   const usv  = rows.map(r => r[usvI]);
-  const pci  = rows.map(r => r[pciI]);
 
   // Rolling mean uses real (UTC) timestamps so windowing is correct regardless of display.
   const cpmRoll = rollingMean(tUtc, cpm, ROLLING_WINDOW_MS);
-  const pciRoll = d.has_pci ? rollingMean(tUtc, pci, ROLLING_WINDOW_MS) : null;
 
-  // Downsample if the user has it enabled AND we have too many points.
+  // Downsample when we have too many points for the selected range.
   let bucketSec = null;
-  let plot = { t, cpm, usv, pci, cpmRoll, pciRoll };
+  let plot = { t, cpm, usv, cpmRoll };
   if (rows.length > TARGET_POINTS_PER_COUNTER && rows.length >= 2) {
     const spanSec = (tUtc[tUtc.length - 1] - tUtc[0]) / 1000;
     bucketSec = pickBucketSeconds(spanSec);
@@ -362,35 +338,13 @@ function renderCharts() {
       cpm:      c.values,
       usv:      u.values,
       cpmRoll:  cr.values,
-      pci:      d.has_pci ? ds(pci).values  : null,
-      pciRoll:  d.has_pci ? ds(pciRoll).values : null,
     };
     // Note: t is realigned to bucket centers; uSv & rolling use the same buckets.
   }
 
-  // On a Radon detector the CPM trace is just background noise of the Geiger-
-  // Müller tube; pCi is the headline. Hide both CPM charts to keep the radon
-  // view focused. uSv/h stays in both views.
-  if (d.has_pci) {
-    document.getElementById("chart-pci").style.display = "";
-    document.getElementById("chart-pci-rolling").style.display = "";
-    plotChart("chart-pci",         plot.t, plot.pci,     "Radon activity (pCi/L)",                                "pCi/L",           "#ff7f0e");
-    plotChart("chart-pci-rolling", plot.t, plot.pciRoll, "Radon rolling mean (1h)", "pCi/L (rolling)", "#d62728");
-    purgeChart("chart-cpm");
-    purgeChart("chart-cpm-rolling");
-    document.getElementById("chart-cpm").style.display = "none";
-    document.getElementById("chart-cpm-rolling").style.display = "none";
-  } else {
-    purgeChart("chart-pci");
-    purgeChart("chart-pci-rolling");
-    document.getElementById("chart-pci").style.display = "none";
-    document.getElementById("chart-pci-rolling").style.display = "none";
-    document.getElementById("chart-cpm").style.display = "";
-    document.getElementById("chart-cpm-rolling").style.display = "";
-    plotChart("chart-cpm",         plot.t, plot.cpm,     "CPM (counts per minute)",                              "CPM",             "#1f77b4");
-    plotChart("chart-cpm-rolling", plot.t, plot.cpmRoll, "CPM rolling mean (1h)",  "CPM (rolling)",   "#9467bd");
-  }
-  plotChart("chart-usv", plot.t, plot.usv, "Dose rate (uSv/h)", "uSv/h", "#2ca02c");
+  plotChart("chart-cpm",         plot.t, plot.cpm,     "CPM (counts per minute)", "CPM",           "#1f77b4");
+  plotChart("chart-cpm-rolling", plot.t, plot.cpmRoll, "CPM rolling mean (1h)",   "CPM (rolling)", "#9467bd");
+  plotChart("chart-usv",         plot.t, plot.usv,     "Dose rate (uSv/h)",       "uSv/h",         "#2ca02c");
 
   // Status caption
   const bucketMsg = bucketSec ? ` · binned to ${fmtBucket(bucketSec)} mean` : "";
@@ -398,10 +352,10 @@ function renderCharts() {
   document.getElementById("status-caption").textContent =
     `Detector: ${d.name} · last refresh: ${last} ${tzAbbrev()} · ${rows.length.toLocaleString()} raw rows in view${bucketMsg}`;
 
-  renderKpis(d, rows, cpmI, usvI, pciI);
+  renderKpis(d, rows, cpmI, usvI);
 }
 
-function renderKpis(d, rows, cpmI, usvI, pciI) {
+function renderKpis(d, rows, cpmI, usvI) {
   document.getElementById("kpi-rows").textContent = rows.length.toLocaleString();
   const lastWith = (idx) => {
     for (let i = rows.length - 1; i >= 0; i--) if (rows[i][idx] != null) return rows[i][idx];
@@ -409,10 +363,8 @@ function renderKpis(d, rows, cpmI, usvI, pciI) {
   };
   const cpm = lastWith(cpmI);
   const usv = lastWith(usvI);
-  const pci = lastWith(pciI);
   document.getElementById("kpi-cpm").textContent = cpm != null ? String(Math.round(cpm)) : "—";
   document.getElementById("kpi-usv").textContent = usv != null ? usv.toFixed(3)         : "—";
-  document.getElementById("kpi-pci").textContent = (d.has_pci && pci != null) ? pci.toFixed(2) : "—";
 }
 
 // ---------- MAP -----------------------------------------------------------
@@ -437,11 +389,9 @@ function counterFeatures() {
     features: counters.map(d => {
       const cpmI = fieldIdx(d, "cpm");
       const usvI = fieldIdx(d, "usv_h");
-      const pciI = fieldIdx(d, "pci");
       const last = d.rows.length ? d.rows[d.rows.length - 1] : null;
       const cpm  = last ? last[cpmI] : null;
       const usv  = last ? last[usvI] : null;
-      const pci  = last ? last[pciI] : null;
       return {
         type: "Feature",
         geometry: { type: "Point", coordinates: [d.lon, d.lat] },
@@ -450,7 +400,6 @@ function counterFeatures() {
           name: d.name,
           cpm,
           usv_h: usv,
-          pci: d.has_pci ? pci : null,
           last_seen: last ? last[0] : null,
           color: cpmColor(cpm),
           selected: d.param_id === STATE.active,
@@ -466,11 +415,9 @@ function popupHtml(props) {
     : "—";
   const cpm = props.cpm != null ? Math.round(props.cpm) : "—";
   const usv = props.usv_h != null ? Number(props.usv_h).toFixed(3) : "—";
-  const pci = props.pci != null ? Number(props.pci).toFixed(2) : "—";
   return `<b>${props.name}</b><br/>` +
     `CPM: ${cpm}<br/>` +
     `uSv/h: ${usv}<br/>` +
-    `pCi/L: ${pci}<br/>` +
     `Last seen: ${ts}`;
 }
 
@@ -562,10 +509,8 @@ function renderMapSection() {
   if (!last) return;
   const cpmI = fieldIdx(d, "cpm");
   const usvI = fieldIdx(d, "usv_h");
-  const pciI = fieldIdx(d, "pci");
   const cpm  = last[cpmI];
   const usv  = last[usvI];
-  const pci  = last[pciI];
   const tr = document.createElement("tr");
   tr.innerHTML =
     `<td><a href="${gmcmapUrl(d.param_id)}" target="_blank" rel="noopener">${d.name} ↗</a></td>` +
@@ -573,7 +518,6 @@ function renderMapSection() {
     `<td>${d.lon?.toFixed(6) ?? "—"}</td>` +
     `<td>${cpm != null ? Math.round(cpm) : "—"}</td>` +
     `<td>${usv != null ? usv.toFixed(3) : "—"}</td>` +
-    `<td>${d.has_pci && pci != null ? pci.toFixed(2) : "—"}</td>` +
     `<td>${fmtDateTime(new Date(last[0]))} ${tzAbbrev()}</td>`;
   tbody.appendChild(tr);
 }

@@ -55,13 +55,8 @@
         <div class="kpi"><span>Rows in view</span><strong id="kpi-rows">—</strong></div>
         <div class="kpi"><span>Latest CPM</span><strong id="kpi-cpm">—</strong></div>
         <div class="kpi"><span>Latest uSv/h</span><strong id="kpi-usv">—</strong></div>
-        <div class="kpi"><span>Latest pCi/L</span><strong id="kpi-pci">—</strong></div>
       </div>
 
-      <!-- Detector-specific charts first (display:none when the active detector
-           does not report pCi), so on radon they are visible above the fold. -->
-      <div class="chart" id="chart-pci"></div>
-      <div class="chart" id="chart-pci-rolling"></div>
       <div class="chart" id="chart-cpm"></div>
       <div class="chart" id="chart-cpm-rolling"></div>
       <div class="chart" id="chart-usv"></div>
@@ -74,7 +69,7 @@
       <div id="map"></div>
       <table id="loc-table">
         <thead>
-          <tr><th>counter</th><th>lat</th><th>lon</th><th>cpm</th><th>uSv/h</th><th>pCi/L</th><th>last seen</th></tr>
+          <tr><th>counter</th><th>lat</th><th>lon</th><th>cpm</th><th>uSv/h</th><th>last seen</th></tr>
         </thead>
         <tbody></tbody>
       </table>
@@ -88,10 +83,6 @@
           <dd>Time-windowed average of CPM (1-hour window). Smooths Poisson noise to reveal trends — independent of gmcmap's server-side ACPM, which uses a window we can't see.</dd>
           <dt>Dose rate (µSv/h)</dt>
           <dd>Equivalent dose rate in microsieverts per hour. Typical natural background outdoors: 0.05–0.15 µSv/h. EPA annual public dose limit ≈ 0.11 µSv/h continuous.</dd>
-          <dt>Radon (pCi/L)</dt>
-          <dd>Radon activity concentration in picocuries per liter (Radon detector only). WHO reference: 2.7 pCi/L. EPA action level for mitigation: 4 pCi/L.</dd>
-          <dt>Radon rolling mean</dt>
-          <dd>Same 1-hour rolling window applied to pCi/L.</dd>
           <dt>Threshold lines</dt>
           <dd>Dashed horizontal lines mark reference levels. Lines outside the chart's autoscaled range are pinned to the top of the chart so they stay visible.</dd>
         </dl>

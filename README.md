@@ -1,10 +1,9 @@
 # hpns-monitor.github.io
 
-Static dashboard for the [gmcmap.com](https://gmcmap.com) Geiger and Radon
-counters at Hunters Point Naval Shipyard:
+Static dashboard for the [gmcmap.com](https://gmcmap.com) Geiger counter at
+Hunters Point Naval Shipyard:
 
 - [Geiger — Param_ID 48050335359](https://gmcmap.com/historyData.asp?Param_ID=48050335359)
-- [Radon  — Param_ID 18659894937](https://gmcmap.com/historyData.asp?Param_ID=18659894937)
 
 ## How it works
 
